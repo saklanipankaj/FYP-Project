@@ -1,5 +1,4 @@
 import argparse
-
 import torch
 import torch.nn as nn
 from torch.utils import data
@@ -216,19 +215,19 @@ def main():
         optimizer.step()
 
         
-        print 'iter = ', i_iter, 'of', args.num_steps,'completed, loss = ', loss.data.cpu().numpy()
+        print('iter = ', i_iter, 'of', args.num_steps,'completed, loss = ', loss.data.cpu().numpy())
 
         if i_iter >= args.num_steps-1:
-            print 'save model ...'
+            print ('save model ...')
             torch.save(model.state_dict(),osp.join(args.snapshot_dir, 'VOC12_scenes_'+str(args.num_steps)+'.pth'))
             break
 
         if i_iter % args.save_pred_every == 0 and i_iter!=0:
-            print 'taking snapshot ...'
+            print ('taking snapshot ...')
             torch.save(model.state_dict(),osp.join(args.snapshot_dir, 'VOC12_scenes_'+str(i_iter)+'.pth'))     
 
     end = timeit.default_timer()
-    print end-start,'seconds'
+    print (end-start,'seconds')
 
 if __name__ == '__main__':
     main()
