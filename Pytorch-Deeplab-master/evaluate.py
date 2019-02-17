@@ -11,20 +11,24 @@ import torchvision.models as models
 import torch.nn.functional as F
 from torch.utils import data
 from deeplab.model import Res_Deeplab
-from deeplab.datasets import VOCDataSet
+from deeplab.datasets import DataSetTest
 from collections import OrderedDict
 import os
+
+from utils import get_colormaps, label_img_to_color
 
 import matplotlib.pyplot as plt
 import torch.nn as nn
 IMG_MEAN = np.array((104.00698793,116.66876762,122.67891434), dtype=np.float32)
 
-DATA_DIRECTORY = '../../data/VOCdevkit/voc12'
-DATA_LIST_PATH = './dataset/list/val.txt'
+GPU = 0
+DATA_DIRECTORY = '../bdd100k/seg/'
 IGNORE_LABEL = 255
-NUM_CLASSES = 21
-NUM_STEPS = 1449 # Number of images in the validation set.
-RESTORE_FROM = './deeplab_resnet.ckpt'
+NUM_CLASSES = 19
+BATCH_SIZE = 1
+NUM_TRAIN_FILES = 7000
+NUM_STEPS = NUM_TRAIN_FILES/BATCH_SIZE # Number of images in the validation set.
+RESTORE_FROM = './BDD_Train_Completed.pkl'
 
 def get_arguments():
     """Parse all the arguments provided from the CLI.
@@ -84,10 +88,10 @@ def show_all(gt, pred):
                          'cow', 'diningtable', 'dog', 'horse',
                          'motorbike', 'person', 'pottedplant',
                          'sheep', 'sofa', 'train', 'tvmonitor'))
-    colormap = [(0,0,0),(0.5,0,0),(0,0.5,0),(0.5,0.5,0),(0,0,0.5),(0.5,0,0.5),(0,0.5,0.5), 
-                    (0.5,0.5,0.5),(0.25,0,0),(0.75,0,0),(0.25,0.5,0),(0.75,0.5,0),(0.25,0,0.5), 
-                    (0.75,0,0.5),(0.25,0.5,0.5),(0.75,0.5,0.5),(0,0.25,0),(0.5,0.25,0),(0,0.75,0), 
-                    (0.5,0.75,0),(0,0.25,0.5)]
+    # colormap = [(0,0,0),(0.5,0,0),(0,0.5,0),(0.5,0.5,0),(0,0,0.5),(0.5,0,0.5),(0,0.5,0.5), 
+    #                 (0.5,0.5,0.5),(0.25,0,0),(0.75,0,0),(0.25,0.5,0),(0.75,0.5,0),(0.25,0,0.5), 
+    #                 (0.75,0,0.5),(0.25,0.5,0.5),(0.75,0.5,0.5),(0,0.25,0),(0.5,0.25,0),(0,0.75,0), 
+    #                 (0.5,0.75,0),(0,0.25,0.5)]
     cmap = colors.ListedColormap(colormap)
     bounds=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21]
     norm = colors.BoundaryNorm(bounds, cmap.N)
@@ -101,43 +105,68 @@ def show_all(gt, pred):
     plt.show()
 
 def main():
-    """Create the model and start the evaluation process."""
-    args = get_arguments()
+    fig, axes = plt.subplots(1, 2)
+    ax1, ax2 = axes
 
-    gpu0 = args.gpu
+    testloader = data.DataLoader(DataSetTest(DATA_DIRECTORY, crop_size=(505, 505), mean=IMG_MEAN, scale=False, mirror=False), 
+                                     batch_size=1, shuffle=False, pin_memory=True)
 
-    model = Res_Deeplab(num_classes=args.num_classes)
     
-    saved_state_dict = torch.load(args.restore_from)
-    model.load_state_dict(saved_state_dict)
-
-    model.eval()
-    model.cuda(gpu0)
-
-    testloader = data.DataLoader(VOCDataSet(args.data_dir, args.data_list, crop_size=(505, 505), mean=IMG_MEAN, scale=False, mirror=False), 
-                                    batch_size=1, shuffle=False, pin_memory=True)
-
-    interp = nn.Upsample(size=(505, 505), mode='bilinear', align_corners=True)
-    data_list = []
+    
+    cmap = get_colormaps()
+    bounds=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18]
+    norm = colors.BoundaryNorm(bounds, cmap.N)
 
     for index, batch in enumerate(testloader):
-        if index % 100 == 0:
-            print('%d processd'%(index))
-        image, label, size, name = batch
-        size = size[0].numpy()
-        output = model(Variable(image, volatile=True).cuda(gpu0))
-        output = interp(output).cpu().data[0].numpy()
 
-        output = output[:,:size[0],:size[1]]
-        gt = np.asarray(label[0].numpy()[:size[0],:size[1]], dtype=np.int)
         
-        output = output.transpose(1,2,0)
-        output = np.asarray(np.argmax(output, axis=2), dtype=np.int)
 
-        # show_all(gt, output)
-        data_list.append([gt.flatten(), output.flatten()])
+    ax1.set_title('gt')
+    ax1.imshow(gt, cmap=cmap, norm=norm)
 
-    get_iou(data_list, args.num_classes)
+    ax2.set_title('pred')
+    ax2.imshow(pred, cmap=cmap, norm=norm)
+
+    plt.show()
+    
+    
+    # """Create the model and start the evaluation process."""
+    # args = get_arguments()
+
+    # gpu0 = args.gpu
+
+    # model = Res_Deeplab(num_classes=args.num_classes)
+    
+    # saved_state_dict = torch.load(args.restore_from)
+    # model.load_state_dict(saved_state_dict)
+
+    # model.eval()
+    # model.cuda(gpu0)
+
+    # testloader = data.DataLoader(DataSetTest(args.data_dir, crop_size=(505, 505), mean=IMG_MEAN, scale=False, mirror=False), 
+    #                                 batch_size=1, shuffle=False, pin_memory=True)
+
+    # interp = nn.Upsample(size=(505, 505), mode='bilinear', align_corners=True)
+    # data_list = []
+
+    # for index, batch in enumerate(testloader):
+    #     if index % 100 == 0:
+    #         print('%d processd'%(index))
+    #     image, label, size, name = batch
+    #     size = size[0].numpy()
+    #     output = model(Variable(image, volatile=True).cuda(gpu0))
+    #     output = interp(output).cpu().data[0].numpy()
+
+    #     output = output[:,:size[0],:size[1]]
+    #     gt = np.asarray(label[0].numpy()[:size[0],:size[1]], dtype=np.int)
+        
+    #     output = output.transpose(1,2,0)
+    #     output = np.asarray(np.argmax(output, axis=2), dtype=np.int)
+
+    #     # show_all(gt, output)
+    #     data_list.append([gt.flatten(), output.flatten()])
+
+    # get_iou(data_list, args.num_classes)
 
 
 if __name__ == '__main__':

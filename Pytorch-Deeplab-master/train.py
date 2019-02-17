@@ -14,83 +14,32 @@ import os
 import os.path as osp
 from deeplab.model import Res_Deeplab
 from deeplab.loss import CrossEntropy2d
-from deeplab.datasets import VOCDataSet
+from deeplab.datasets import DataSetTrain, DataSetVal
 import matplotlib.pyplot as plt
 import random
 import timeit
-start = timeit.default_timer()
 
-IMG_MEAN = np.array((104.00698793,116.66876762,122.67891434), dtype=np.float32)
-
-BATCH_SIZE = 10
-DATA_DIRECTORY = '../../data/VOCdevkit/voc12'
-DATA_LIST_PATH = './dataset/list/train_aug.txt'
+BATCH_SIZE = 5
+INPUT_SIZE = (321,321)
+DATA_DIRECTORY = '../bdd100k/seg/'
 IGNORE_LABEL = 255
-INPUT_SIZE = '321,321'
 LEARNING_RATE = 2.5e-4
 MOMENTUM = 0.9
-NUM_CLASSES = 21
-NUM_STEPS = 20000
+NUM_CLASSES = 19
+NUM_TRAIN_FILES = 7000
+NUM_STEPS = NUM_TRAIN_FILES/BATCH_SIZE
 POWER = 0.9
 RANDOM_SEED = 1234
-RESTORE_FROM = './dataset/MS_DeepLab_resnet_pretrained_COCO_init.pth'
+RESTORE_FROM = './checkpoints/MS_DeepLab_resnet_pretrained_COCO_init.pth'
 SAVE_NUM_IMAGES = 2
-SAVE_PRED_EVERY = 1000
-SNAPSHOT_DIR = './snapshots/'
+SAVE_EVERY = 2
+CHECKPOINT_DIR = './checkpoints/'
 WEIGHT_DECAY = 0.0005
+EPOCHS = 400
 
-def get_arguments():
-    """Parse all the arguments provided from the CLI.
-    
-    Returns:
-      A list of parsed arguments.
-    """
-    parser = argparse.ArgumentParser(description="DeepLab-ResNet Network")
-    parser.add_argument("--batch-size", type=int, default=BATCH_SIZE,
-                        help="Number of images sent to the network in one step.")
-    parser.add_argument("--data-dir", type=str, default=DATA_DIRECTORY,
-                        help="Path to the directory containing the PASCAL VOC dataset.")
-    parser.add_argument("--data-list", type=str, default=DATA_LIST_PATH,
-                        help="Path to the file listing the images in the dataset.")
-    parser.add_argument("--ignore-label", type=int, default=IGNORE_LABEL,
-                        help="The index of the label to ignore during the training.")
-    parser.add_argument("--input-size", type=str, default=INPUT_SIZE,
-                        help="Comma-separated string with height and width of images.")
-    parser.add_argument("--is-training", action="store_true",
-                        help="Whether to updates the running means and variances during the training.")
-    parser.add_argument("--learning-rate", type=float, default=LEARNING_RATE,
-                        help="Base learning rate for training with polynomial decay.")
-    parser.add_argument("--momentum", type=float, default=MOMENTUM,
-                        help="Momentum component of the optimiser.")
-    parser.add_argument("--not-restore-last", action="store_true",
-                        help="Whether to not restore last (FC) layers.")
-    parser.add_argument("--num-classes", type=int, default=NUM_CLASSES,
-                        help="Number of classes to predict (including background).")
-    parser.add_argument("--num-steps", type=int, default=NUM_STEPS,
-                        help="Number of training steps.")
-    parser.add_argument("--power", type=float, default=POWER,
-                        help="Decay parameter to compute the learning rate.")
-    parser.add_argument("--random-mirror", action="store_true",
-                        help="Whether to randomly mirror the inputs during the training.")
-    parser.add_argument("--random-scale", action="store_true",
-                        help="Whether to randomly scale the inputs during the training.")
-    parser.add_argument("--random-seed", type=int, default=RANDOM_SEED,
-                        help="Random seed to have reproducible results.")
-    parser.add_argument("--restore-from", type=str, default=RESTORE_FROM,
-                        help="Where restore model parameters from.")
-    parser.add_argument("--save-num-images", type=int, default=SAVE_NUM_IMAGES,
-                        help="How many images to save.")
-    parser.add_argument("--save-pred-every", type=int, default=SAVE_PRED_EVERY,
-                        help="Save summaries and checkpoint every often.")
-    parser.add_argument("--snapshot-dir", type=str, default=SNAPSHOT_DIR,
-                        help="Where to save snapshots of the model.")
-    parser.add_argument("--weight-decay", type=float, default=WEIGHT_DECAY,
-                        help="Regularisation parameter for L2-loss.")
-    parser.add_argument("--gpu", type=int, default=0,
-                        help="choose gpu device.")
-    return parser.parse_args()
-
-args = get_arguments()
+#Transform Params
+RANDOM_SCALE = True
+RANDOM_FLIP = True
 
 def loss_calc(pred, label):
     """
@@ -148,22 +97,26 @@ def get_10x_lr_params(model):
             
 def adjust_learning_rate(optimizer, i_iter):
     """Sets the learning rate to the initial LR divided by 5 at 60th, 120th and 160th epochs"""
-    lr = lr_poly(args.learning_rate, i_iter, args.num_steps, args.power)
+    lr = lr_poly(LEARNING_RATE, i_iter, EPOCHS, POWER)
     optimizer.param_groups[0]['lr'] = lr
     optimizer.param_groups[1]['lr'] = lr * 10
 
 
 def main():
+    with open("../bdd100k/seg/img_mean.pkl", "rb") as file: # (needed for python3)
+        IMG_MEAN = np.array(pickle.load(file))
+
+    start = timeit.default_timer()
     """Create the model and start the training."""
     
-    os.environ["CUDA_VISIBLE_DEVICES"]=str(args.gpu)
-    h, w = map(int, args.input_size.split(','))
-    input_size = (h, w)
+    os.environ["CUDA_VISIBLE_DEVICES"]=str(0)
+    # h, w = map(int, args.input_size.split(','))
+    input_size = INPUT_SIZE
 
     cudnn.enabled = True
 
     # Create network.
-    model = Res_Deeplab(num_classes=args.num_classes)
+    model = Res_Deeplab(num_classes=NUM_CLASSES)
     # For a small batch size, it is better to keep 
     # the statistics of the BN layers (running means and variances)
     # frozen, and to not update the values provided by the pre-trained model. 
@@ -171,13 +124,13 @@ def main():
     # Note that is_training=False still updates BN parameters gamma (scale) and beta (offset)
     # if they are presented in var_list of the optimiser definition.
 
-    saved_state_dict = torch.load(args.restore_from)
+    saved_state_dict = torch.load(RESTORE_FROM)
     new_params = model.state_dict().copy()
     for i in saved_state_dict:
         #Scale.layer5.conv2d_list.3.weight
         i_parts = i.split('.')
         # print i_parts
-        if not args.num_classes == 21 or not i_parts[1]=='layer5':
+        if not NUM_CLASSES == 19 or not i_parts[1]=='layer5':
             new_params['.'.join(i_parts[1:])] = saved_state_dict[i]
     model.load_state_dict(new_params)
     #model.float()
@@ -187,47 +140,64 @@ def main():
     
     cudnn.benchmark = True
 
-    if not os.path.exists(args.snapshot_dir):
-        os.makedirs(args.snapshot_dir)
+    if not os.path.exists(CHECKPOINT_DIR):
+        os.makedirs(CHECKPOINT_DIR)
 
 
-    trainloader = data.DataLoader(VOCDataSet(args.data_dir, args.data_list, max_iters=args.num_steps*args.batch_size, crop_size=input_size, 
-                    scale=args.random_scale, mirror=args.random_mirror, mean=IMG_MEAN), 
-                    batch_size=args.batch_size, shuffle=True, num_workers=5, pin_memory=True)
+    trainloader = data.DataLoader(DataSetTrain(DATA_DIRECTORY, max_iters=NUM_STEPS*BATCH_SIZE, crop_size=input_size, 
+                    scale=RANDOM_SCALE, mirror=RANDOM_FLIP, mean=IMG_MEAN), 
+                    batch_size=BATCH_SIZE, shuffle=True, num_workers=1, pin_memory=True)
 
-    optimizer = optim.SGD([{'params': get_1x_lr_params_NOscale(model), 'lr': args.learning_rate }, 
-                {'params': get_10x_lr_params(model), 'lr': 10*args.learning_rate}], 
-                lr=args.learning_rate, momentum=args.momentum,weight_decay=args.weight_decay)
+    #Optimizer
+    optimizer = optim.SGD([{'params': get_1x_lr_params_NOscale(model), 'lr': LEARNING_RATE }, 
+                {'params': get_10x_lr_params(model), 'lr': 10*LEARNING_RATE}], 
+                lr=LEARNING_RATE, momentum=MOMENTUM,weight_decay=WEIGHT_DECAY)
     optimizer.zero_grad()
 
+    #Upsampling Layer
     interp = nn.Upsample(size=input_size, mode='bilinear', align_corners=True)
 
+    train_epoch_loss = []
+    print ("Starting Training!")
+    print ("==================")
+    for epoch in range(EPOCHS):
+        batch_losses = []
+        for i_iter, batch in enumerate(trainloader):
+            images, labels, _, _ = batch
+            images = Variable(images).cuda()
 
-    for i_iter, batch in enumerate(trainloader):
-        images, labels, _, _ = batch
-        images = Variable(images).cuda()
+            optimizer.zero_grad()
+            adjust_learning_rate(optimizer, epoch)
+            pred =  nn.functional.interpolate((model(images)),size=input_size, mode='bilinear', align_corners=True)
+            loss = loss_calc(pred, labels)
+            loss.backward()
+            optimizer.step()
+            batch_losses.append(loss.data.cpu().numpy())
+            if i_iter%100==0:
+                print('Batch ', i_iter, 'of', NUM_STEPS,' completed, loss = ', loss.data.cpu().numpy())
 
-        optimizer.zero_grad()
-        adjust_learning_rate(optimizer, i_iter)
-        pred = interp(model(images))
-        loss = loss_calc(pred, labels)
-        loss.backward()
-        optimizer.step()
+        epoch_loss = np.mean(batch_losses)
+        train_epoch_loss.append(epoch_loss)
+        print('epoch ', epoch, 'of', EPOCHS,' completed, loss = ', epoch_loss)
 
-        
-        print('iter = ', i_iter, 'of', args.num_steps,'completed, loss = ', loss.data.cpu().numpy())
-
-        if i_iter >= args.num_steps-1:
+        if epoch >= EPOCHS-1:
             print ('save model ...')
-            torch.save(model.state_dict(),osp.join(args.snapshot_dir, 'VOC12_scenes_'+str(args.num_steps)+'.pth'))
+            torch.save(model.state_dict(),osp.join(CHECKPOINT_DIR, 'BDD_Train_Completed.pkl'))
             break
 
-        if i_iter % args.save_pred_every == 0 and i_iter!=0:
-            print ('taking snapshot ...')
-            torch.save(model.state_dict(),osp.join(args.snapshot_dir, 'VOC12_scenes_'+str(i_iter)+'.pth'))     
+        if epoch % SAVE_EVERY == 0 and epoch!=0:
+            print ('taking checkpoint ...')
+            torch.save(model.state_dict(),osp.join(CHECKPOINT_DIR, 'BDD_Train_'+str(epoch)+'.pkl'))     
 
     end = timeit.default_timer()
     print (end-start,'seconds')
+    plt.figure(1)
+    plt.plot(range(EPOCHS), train_epoch_loss)
+    plt.ylabel("loss")
+    plt.xlabel("epoch")
+    plt.title("Train Loss Per Epoch")
+    plt.savefig("%s/epoch_losses_train.png" % CHECKPOINT_DIR)
+    plt.close(1)
 
 if __name__ == '__main__':
     main()

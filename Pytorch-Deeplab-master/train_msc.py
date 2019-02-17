@@ -1,5 +1,5 @@
+#training with multi-scale input
 import argparse
-
 import torch
 import torch.nn as nn
 from torch.utils import data
@@ -16,7 +16,7 @@ import os.path as osp
 import scipy.ndimage as nd
 from deeplab.model import Res_Deeplab
 from deeplab.loss import CrossEntropy2d
-from deeplab.datasets import VOCDataSet
+from deeplab.datasets import BDDDataset
 import matplotlib.pyplot as plt
 import random
 import timeit
@@ -25,21 +25,20 @@ start = timeit.timeit()
 IMG_MEAN = np.array((104.00698793,116.66876762,122.67891434), dtype=np.float32)
 
 BATCH_SIZE = 1
-DATA_DIRECTORY = '../data/VOCdevkit/voc12'
-DATA_LIST_PATH = './dataset/list/train_aug.txt'
+DATA_DIRECTORY = '../../bdd100k/seg/'
 ITER_SIZE = 10
 IGNORE_LABEL = 255
-INPUT_SIZE = '321,321'
+INPUT_SIZE = '720,1280'
 LEARNING_RATE = 2.5e-4
 MOMENTUM = 0.9
 NUM_CLASSES = 21
-NUM_STEPS = 20000
-POWER = 0.9
+NUM_STEPS = 7000
+DECAY = 0.9
 RANDOM_SEED = 1234
-RESTORE_FROM = './dataset/MS_DeepLab_resnet_pretrained_COCO_init.pth'
+RESTORE_FROM = 'checkpoints/MS_DeepLab_resnet_pretrained_COCO_init.pth'
 SAVE_NUM_IMAGES = 2
 SAVE_PRED_EVERY = 1000
-SNAPSHOT_DIR = './snapshots_msc/'
+SNAPSHOT_DIR = 'checkpoints/'
 WEIGHT_DECAY = 0.0005
 
 def get_arguments():
@@ -73,7 +72,7 @@ def get_arguments():
                         help="Number of classes to predict (including background).")
     parser.add_argument("--num-steps", type=int, default=NUM_STEPS,
                         help="Number of training steps.")
-    parser.add_argument("--power", type=float, default=POWER,
+    parser.add_argument("--decay", type=float, default=DECAY,
                         help="Decay parameter to compute the learning rate.")
     parser.add_argument("--random-mirror", action="store_true",
                         help="Whether to randomly mirror the inputs during the training.")
@@ -87,8 +86,8 @@ def get_arguments():
                         help="How many images to save.")
     parser.add_argument("--save-pred-every", type=int, default=SAVE_PRED_EVERY,
                         help="Save summaries and checkpoint every often.")
-    parser.add_argument("--snapshot-dir", type=str, default=SNAPSHOT_DIR,
-                        help="Where to save snapshots of the model.")
+    parser.add_argument("--checkpoint-dir", type=str, default=SNAPSHOT_DIR,
+                        help="Where to save checkpoints of the model.")
     parser.add_argument("--weight-decay", type=float, default=WEIGHT_DECAY,
                         help="Regularisation parameter for L2-loss.")
     parser.add_argument("--gpu", type=int, default=0,
@@ -112,8 +111,8 @@ def loss_calc(pred, label, gpu):
     return criterion(pred, label)
 
 
-def lr_poly(base_lr, iter, max_iter, power):
-    return base_lr*((1-float(iter)/max_iter)**(power))
+def lr_poly(base_lr, iter, max_iter, decay):
+    return base_lr*((1-float(iter)/max_iter)**(decay))
 
 
 def get_1x_lr_params_NOscale(model):
@@ -199,7 +198,7 @@ def main():
         os.makedirs(args.snapshot_dir)
 
 
-    trainloader = data.DataLoader(VOCDataSet(args.data_dir, args.data_list, max_iters=args.num_steps*args.iter_size,
+    trainloader = data.DataLoader(BDDDataset(args.data_dir, max_iters=args.num_steps*args.iter_size,
                     crop_size=input_size, scale=args.random_scale, mirror=args.random_mirror, mean=IMG_MEAN), 
                     batch_size=args.batch_size, shuffle=True, num_workers=1, pin_memory=True)
 
@@ -239,7 +238,7 @@ def main():
         if b_iter >= args.num_steps-1:
             print 'save model ...'
             optimizer.step()
-            torch.save(model.state_dict(),osp.join(args.snapshot_dir, 'VOC12_scenes_'+str(args.num_steps)+'.pth'))
+            torch.save(model.state_dict(),osp.join(args.snapshot_dir, 'BDDDataset_'+str(args.num_steps)+'.pth'))
             break
 
         if i_iter % args.iter_size == 0 and i_iter != 0:
@@ -251,7 +250,7 @@ def main():
 
         if i_iter % (args.save_pred_every*args.iter_size) == 0 and b_iter!=0:
             print 'taking snapshot ...'
-            torch.save(model.state_dict(),osp.join(args.snapshot_dir, 'VOC12_scenes_'+str(b_iter)+'.pth'))
+            torch.save(model.state_dict(),osp.join(args.snapshot_dir, 'BDDDataset_'+str(b_iter)+'.pth'))
 
     end = timeit.timeit()
     print end-start,'seconds'

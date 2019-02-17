@@ -88,3 +88,8 @@ labels = [
     Label(  'train'                , 39 ,       16 , 'vehicle'         , 7       , True         , False        , (  0, 80,100) ),
     Label(  'truck'                , 40 ,       14 , 'vehicle'         , 7       , True         , False        , (  0,  0, 70) ),
 ]
+
+
+if __name__ == '__main__':
+
+    
