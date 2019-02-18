@@ -333,7 +333,7 @@ if __name__ == '__main__':
     IMG_MEAN = np.array((128,128,128), dtype=np.float32)
 
     BATCH_SIZE = 10
-    IMAGE_SIZE = (1280,720)
+    IMAGE_SIZE = (321,321)
     DATA_DIRECTORY = '../../bdd100k/seg/'
     IGNORE_LABEL = 255
     INPUT_SIZE = '321,321'
@@ -381,12 +381,20 @@ if __name__ == '__main__':
     trainloader = data.DataLoader(DataSetTrain(DATA_DIRECTORY, max_iters=NUM_STEPS*BATCH_SIZE, crop_size=IMAGE_SIZE, 
                     scale=RANDOM_SCALE, mirror=RANDOM_FLIP, mean=IMG_MEAN), 
                     batch_size=BATCH_SIZE, shuffle=True, num_workers=5, pin_memory=True)
-    
-    for i, data in enumerate(trainloader):
-        imgs, labels, size , name  = data
-        if i == 0:
-            print(imgs.size())
-            img = imgs[0].numpy()#torchvision.utils.make_grid(imgs).numpy()
-            img = np.transpose(img, (1, 2, 0))
-            mean = np.mean(img,axis=(0,1))
-            print(mean)
+
+    for epoch in range(4):
+        for i, data in enumerate(trainloader):
+            imgs, labels, size , name  = data
+            if i == 0:
+                print(imgs.size())
+                img = imgs[0].numpy()#torchvision.utils.make_grid(imgs).numpy()
+                img = np.transpose(img, (1, 2, 0))
+                img += IMG_MEAN
+                img = img/255.0
+                plt.subplot(1,4,epoch+1)
+                plt.axis('off')
+                plt.imshow(img)
+                break
+
+    plt.show()
+                

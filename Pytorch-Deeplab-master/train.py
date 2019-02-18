@@ -1,22 +1,16 @@
-import argparse
 import torch
 import torch.nn as nn
 from torch.utils import data
 import numpy as np
 import pickle
-import cv2
 from torch.autograd import Variable
 import torch.optim as optim
-import scipy.misc
 import torch.backends.cudnn as cudnn
-import sys
 import os
 import os.path as osp
 from deeplab.model import Res_Deeplab
-from deeplab.loss import CrossEntropy2d
 from deeplab.datasets import DataSetTrain, DataSetVal
 import matplotlib.pyplot as plt
-import random
 import timeit
 
 BATCH_SIZE = 5
@@ -30,12 +24,12 @@ NUM_TRAIN_FILES = 7000
 NUM_STEPS = NUM_TRAIN_FILES/BATCH_SIZE
 POWER = 0.9
 RANDOM_SEED = 1234
-RESTORE_FROM = './checkpoints/MS_DeepLab_resnet_pretrained_COCO_init.pth'
+RESTORE_FROM = './pretrain/MS_DeepLab_resnet_pretrained_COCO_init.pth'
 SAVE_NUM_IMAGES = 2
-SAVE_EVERY = 2
+SAVE_EVERY = 1
 CHECKPOINT_DIR = './checkpoints/'
 WEIGHT_DECAY = 0.0005
-EPOCHS = 400
+EPOCHS = 200
 
 #Transform Params
 RANDOM_SCALE = True
@@ -124,6 +118,8 @@ def main():
     # Note that is_training=False still updates BN parameters gamma (scale) and beta (offset)
     # if they are presented in var_list of the optimiser definition.
 
+    
+    
     saved_state_dict = torch.load(RESTORE_FROM)
     new_params = model.state_dict().copy()
     for i in saved_state_dict:
@@ -158,9 +154,27 @@ def main():
     interp = nn.Upsample(size=input_size, mode='bilinear', align_corners=True)
 
     train_epoch_loss = []
+    start_epoch = 0
+
+    # Resume Training
+    if len(os.listdir(CHECKPOINT_DIR)) > 0:
+        checkpoint_path = CHECKPOINT_DIR + os.listdir(CHECKPOINT_DIR)[-1]
+        checkpoint = torch.load(checkpoint_path)
+        print(checkpoint.keys())
+        start_epoch = int(checkpoint['epoch'])+1
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        train_epoch_loss = checkpoint['train_epoch_loss']
+    
+
     print ("Starting Training!")
     print ("==================")
-    for epoch in range(EPOCHS):
+    for epoch in range(start_epoch, EPOCHS):
+
+        #restore loss function
+        if start_epoch > 0 and epoch == start_epoch:
+            loss = checkpoint['loss']
+ 
         batch_losses = []
         for i_iter, batch in enumerate(trainloader):
             images, labels, _, _ = batch
@@ -180,14 +194,26 @@ def main():
         train_epoch_loss.append(epoch_loss)
         print('epoch ', epoch, 'of', EPOCHS,' completed, loss = ', epoch_loss)
 
+        #Removing Previous Saved Model
+        if epoch >= EPOCHS-1 or (epoch % SAVE_EVERY == 0 and epoch!=0) and len(os.listdir(CHECKPOINT_DIR)) > 0:
+            os.unlink(osp.join(CHECKPOINT_DIR,os.listdir(CHECKPOINT_DIR)[-1]))
+            
+        #Saving Model
         if epoch >= EPOCHS-1:
-            print ('save model ...')
-            torch.save(model.state_dict(),osp.join(CHECKPOINT_DIR, 'BDD_Train_Completed.pkl'))
-            break
+            print ('Training Completed Saving Model ...')
+            torch.save({'epoch': epoch,
+                    'train_epoch_loss':train_epoch_loss,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': loss}, osp.join(CHECKPOINT_DIR, 'BDD_Train_Completed.pkl'))
 
-        if epoch % SAVE_EVERY == 0 and epoch!=0:
+        elif epoch % SAVE_EVERY == 0 and epoch!=0:
             print ('taking checkpoint ...')
-            torch.save(model.state_dict(),osp.join(CHECKPOINT_DIR, 'BDD_Train_'+str(epoch)+'.pkl'))     
+            torch.save({'epoch': epoch,
+                    'train_epoch_loss':train_epoch_loss,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': loss}, osp.join(CHECKPOINT_DIR, 'BDD_Train_Completed.pkl'))    
 
     end = timeit.default_timer()
     print (end-start,'seconds')
