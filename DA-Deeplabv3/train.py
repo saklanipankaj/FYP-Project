@@ -224,6 +224,7 @@ def main():
             images = Variable(images).cuda()
 
             test_images, _ = next(test_iter)
+            images = Variable(test_images).cuda()
 
             optimizer.zero_grad()
             adjust_learning_rate(optimizer, epoch*i_iter)
