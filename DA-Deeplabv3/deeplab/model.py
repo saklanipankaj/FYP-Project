@@ -288,21 +288,19 @@ class MS_Deeplab(nn.Module):
 
 class DC_Deeplab(nn.Module):
     def __init__(self,block,num_classes):
-        super(MS_Deeplab,self).__init__()
-        self.Scale = ResNet(block,[3, 4, 23, 3],num_classes)
+        super(DC_Deeplab,self).__init__()
+        self.model = ResNet(block,[3, 4, 23, 3],num_classes)
 
     def forward(self, source, target):
-        output = self.Scale(source) # for original scale
+        output = self.model(source) # for original scale
 
         mmd_loss = 0;
 
         if self.training:
-            target_output = self.Scale(target)
+            target_output = self.model(target)
             mmd_loss = mmd_linear(source, target)
 
         return output, mmd_loss
-
-
 
 def mmd_linear(f_of_X, f_of_Y):
     meanX = torch.mean(f_of_X, (2,3))
@@ -311,6 +309,10 @@ def mmd_linear(f_of_X, f_of_Y):
     delta = meanX - meanY
     loss = torch.mean(torch.mm(delta, torch.transpose(delta, 0, 1)))
     return loss
+
+def DC_Deeplab(num_classes=19):
+    model = DC_Deeplab(Bottleneck, num_classes)
+    return model
 
 def Res_Ms_Deeplab(num_classes=21):
     model = MS_Deeplab(Bottleneck, num_classes)

@@ -8,7 +8,7 @@ import torch.optim as optim
 import torch.backends.cudnn as cudnn
 import os
 import os.path as osp
-from deeplab.model import Res_Deeplab
+from deeplab.model import DC_Deeplab
 from deeplab.datasets import DataSetTrain, DataSetVal, DataSetTest
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -141,7 +141,7 @@ def main():
     cudnn.enabled = True
 
     # Create network.
-    model = Res_Deeplab(num_classes=NUM_CLASSES)
+    model = DC_Deeplab(num_classes=NUM_CLASSES)
     # For a small batch size, it is better to keep 
     # the statistics of the BN layers (running means and variances)
     # frozen, and to not update the values provided by the pre-trained model. 
@@ -192,7 +192,7 @@ def main():
     optimizer.zero_grad()
 
     #Upsampling Layer
-    interp = nn.Upsample(size=input_size, mode='bilinear', align_corners=True)
+    interp = nn.functional.interpolate((size=input_size, mode='bilinear', align_corners=True)
 
     train_epoch_loss = []
     start_epoch = 0
@@ -224,7 +224,7 @@ def main():
             test_images, _ = next(test_iter)
 
             images = Variable(images).cuda()
-            images = Variable(test_images).cuda()
+            test_images = Variable(test_images).cuda()
 
             optimizer.zero_grad()
             adjust_learning_rate(optimizer, epoch*i_iter)
@@ -232,10 +232,11 @@ def main():
             pred =  nn.functional.interpolate((model(images)),size=input_size, mode='bilinear', align_corners=True)
             target = nn.functional.interpolate((model(test_images)),size=input_size, mode='bilinear', align_corners=True)
 
-            print("MMD_LOSS: "+str((MMD_LAMDA*mmd_linear(pred,target)).data.cpu().numpy()))
+            # pred, mmd_loss =  model(images,test_images)
 
-            loss = loss_calc(pred, labels, CLASS_WEIGHTS) + MMD_LAMDA*mmd_linear(pred,target)
+            # print("MMD_LOSS: "+str((MMD_LAMDA*mmd_linear(pred,target)).data.cpu().numpy()))
 
+            loss = loss_calc(pred, labels, CLASS_WEIGHTS) + MMD_LAMDA*mmd_loss
 
             loss.backward()
             optimizer.step()
