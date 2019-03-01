@@ -180,7 +180,7 @@ def main():
 
     testloader = data.DataLoader(DataSetTest(DATA_DIRECTORY, max_iters=NUM_STEPS*BATCH_SIZE, crop_size=input_size, 
                 scale=RANDOM_SCALE, mirror=RANDOM_FLIP, mean=TEST_IMG_MEAN, train=True), 
-                batch_size=BATCH_SIZE, shuffle=True, num_workers=5, pin_memory=True)
+                batch_size=BATCH_SIZE, shuffle=True, num_workers=1, pin_memory=True)
 
     # Cyclically Iterate through testloader as testloader has lesser batches than trainloader
     test_iter = cycle(testloader)
@@ -221,9 +221,9 @@ def main():
 
         for i_iter, batch in enumerate(trainloader):
             images, labels, _ = batch
-            images = Variable(images).cuda()
-
             test_images, _ = next(test_iter)
+
+            images = Variable(images).cuda()
             images = Variable(test_images).cuda()
 
             optimizer.zero_grad()
