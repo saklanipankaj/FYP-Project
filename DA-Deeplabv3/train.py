@@ -36,7 +36,7 @@ SAVE_NUM_IMAGES = 2
 SAVE_EVERY = 1
 CHECKPOINT_DIR = './checkpoints/'
 WEIGHT_DECAY = 0.0005
-EPOCHS = 1
+EPOCHS = 400
 
 #Transform Params
 RANDOM_SCALE = True
@@ -196,8 +196,8 @@ def main():
     start_epoch = 0
 
     # Resume Training
-    if len(os.listdir(CHECKPOINT_DIR)) > 0:
-        checkpoint_path = CHECKPOINT_DIR + os.listdir(CHECKPOINT_DIR)[-1]
+    if len(os.listdir(CHECKPOINT_SAVEPATH)) > 0:
+        checkpoint_path = CHECKPOINT_SAVEPATH + os.listdir(CHECKPOINT_SAVEPATH)[-1]
         checkpoint = torch.load(checkpoint_path)
         print(checkpoint.keys())
         start_epoch = int(checkpoint['epoch'])+1
