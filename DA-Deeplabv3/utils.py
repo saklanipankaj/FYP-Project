@@ -136,3 +136,6 @@ def add_weight_decay(net, l2_value, skip_list=()):
             decay.append(param)
 
     return [{'params': no_decay, 'weight_decay': 0.0}, {'params': decay, 'weight_decay': l2_value}]
+
+
+def computeTrainClassWeights()
