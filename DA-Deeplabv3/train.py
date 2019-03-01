@@ -165,11 +165,13 @@ def main():
     
     cudnn.benchmark = True
 
-    CHECKPOINT_SAVEPATH = CHECKPOINT_DIR+"/"+str(EPOCHS)+"_models/"
+    CHECKPOINT_SAVEPATH = CHECKPOINT_DIR+"/DC_"+str(EPOCHS)+"_models/"
 
     #Create Checkpoint Directory if not found
     if not os.path.exists(CHECKPOINT_DIR):
         os.makedirs(CHECKPOINT_DIR)
+
+    if not os.path.exists(CHECKPOINT_SAVEPATH):
         os.makedirs(CHECKPOINT_SAVEPATH)
 
     trainloader = data.DataLoader(DataSetTrain(DATA_DIRECTORY, max_iters=NUM_STEPS*BATCH_SIZE, crop_size=input_size, 
