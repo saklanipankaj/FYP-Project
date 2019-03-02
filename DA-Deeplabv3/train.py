@@ -266,7 +266,7 @@ def main():
                     'train_epoch_loss':train_epoch_loss,
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': loss}, osp.join(CHECKPOINT_SAVEPATH, 'BDD_Train_'+epoch+'.pkl'))    
+                    'loss': loss}, osp.join(CHECKPOINT_SAVEPATH, 'BDD_Train_'+str(epoch)+'.pkl'))    
 
     end = timeit.default_timer()
     total_time = end-start
@@ -279,8 +279,9 @@ def main():
     'time_per_epoch':total_time/EPOCHS,
     }
 
+    
     # save
-    with open(CHECKPOINT_DIR+"/completetion_params_"+EPOCHS+".pkl", "wb") as file:
+    with open(CHECKPOINT_DIR+"/completetion_params_"+str(EPOCHS)+".pkl", "wb") as file:
         pickle.dump(savedata, file, protocol=2) # (protocol=2 is needed to be able to open this file with python2)
 
     plt.figure(1)
