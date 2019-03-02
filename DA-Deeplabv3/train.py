@@ -23,6 +23,7 @@ LEARNING_RATE = 2.5e-4
 MOMENTUM = 0.9
 NUM_CLASSES = 19
 NUM_TRAIN_FILES = 7000
+NUM_TEST_FILES = 1900
 NUM_STEPS = NUM_TRAIN_FILES/BATCH_SIZE
 POWER = 0.9
 RANDOM_SEED = 1234
@@ -174,11 +175,11 @@ def main():
     if not os.path.exists(CHECKPOINT_SAVEPATH):
         os.makedirs(CHECKPOINT_SAVEPATH)
 
-    trainloader = data.DataLoader(DataSetTrain(DATA_DIRECTORY, max_iters=NUM_STEPS*BATCH_SIZE, crop_size=input_size, 
+    trainloader = data.DataLoader(DataSetTrain(DATA_DIRECTORY, max_iters=NUM_TRAIN_FILES, crop_size=input_size, 
                     scale=RANDOM_SCALE, mirror=RANDOM_FLIP, mean=TRAIN_IMG_MEAN), 
                     batch_size=BATCH_SIZE, shuffle=True, num_workers=1, pin_memory=True)
 
-    testloader = data.DataLoader(DataSetTest(DATA_DIRECTORY, max_iters=NUM_STEPS*BATCH_SIZE, crop_size=input_size, 
+    testloader = data.DataLoader(DataSetTest(DATA_DIRECTORY, max_iters=NUM_TEST_FILES, crop_size=input_size, 
                 scale=RANDOM_SCALE, mirror=RANDOM_FLIP, mean=TEST_IMG_MEAN, train=True), 
                 batch_size=BATCH_SIZE, shuffle=True, num_workers=1, pin_memory=True)
 

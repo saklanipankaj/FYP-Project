@@ -201,9 +201,12 @@ class DataSetTest(data.Dataset):
 
         # Dataset has all Apollo Test Images for Training
         if self.train:
-            for img in os.listdir(imgPath):
+            for i, img in enumerate(os.listdir(imgPath)):
+                if i == max_iters:
+                    break
+
                 img_file = imgPath+img
-                
+
                 #remove .png extension from the image
                 name = img[:-4]
                 label = "%s_train_id.png"%name
