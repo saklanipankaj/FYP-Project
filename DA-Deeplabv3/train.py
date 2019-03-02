@@ -193,7 +193,7 @@ def main():
     optimizer.zero_grad()
 
     #Upsampling Layer
-    interp = nn.functional.interpolate((size=input_size, mode='bilinear', align_corners=True)
+    interp = nn.functional.interpolate(size=input_size, mode='bilinear', align_corners=True)
 
     train_epoch_loss = []
     start_epoch = 0
