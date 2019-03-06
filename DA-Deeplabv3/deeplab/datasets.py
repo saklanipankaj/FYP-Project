@@ -151,7 +151,7 @@ class DataSetVal(data.Dataset):
         #Pad with 0 for image and ignore_label for label if size < cropsize 
         pad_h = max(self.crop_h - img_h, 0)
         pad_w = max(self.crop_w - img_w, 0)
-        print ("Pad_H is"+(pad_h > 0 or pad_w > 0))
+
         if pad_h > 0 or pad_w > 0:
             img_pad = cv2.copyMakeBorder(image, 0, pad_h, 0, 
                 pad_w, cv2.BORDER_CONSTANT, 
@@ -175,7 +175,7 @@ class DataSetVal(data.Dataset):
             image = image[:, :, ::flip]
             label = label[:, ::flip]
 
-        return image.copy(), label.copy(), name
+        return image.copy(), label.copy(), size, name
 
 class DataSetTest(data.Dataset):
     def __init__(self, root, max_iters= None, crop_size=(1280,720), mean=(128, 128, 128), mirror=False, scale=False, train=True):

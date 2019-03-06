@@ -15,9 +15,9 @@ from tqdm import tqdm
 from itertools import cycle
 import timeit
 
+# Dataset Variables
 BATCH_SIZE = 5
 INPUT_SIZE = (256,256)
-DATA_DIRECTORY = '../bdd100k/seg/'
 IGNORE_LABEL = 255
 LEARNING_RATE = 2.5e-4
 MOMENTUM = 0.9
@@ -27,24 +27,29 @@ NUM_TEST_FILES = 1900
 NUM_STEPS = NUM_TRAIN_FILES/BATCH_SIZE
 POWER = 0.9
 RANDOM_SEED = 1234
-RESTORE_FROM = './pretrain/MS_DeepLab_resnet_pretrained_COCO_init.pth'
-
-TEST_MEAN_PATH = "../bdd100k/seg/test_mean.pkl"
-TRAIN_MEAN_PATH = "../bdd100k/seg/train_mean.pkl"
-CLASS_WEIGHT_PATH = "../bdd100k/seg/class_weights.pkl"
-
 SAVE_NUM_IMAGES = 2
 SAVE_EVERY = 1
-CHECKPOINT_DIR = './checkpoints/'
-WEIGHT_DECAY = 0.0005
-EPOCHS = 400
 
 #Transform Params
 RANDOM_SCALE = True
 RANDOM_FLIP = True
 
+WEIGHT_DECAY = 0.0005
+EPOCHS = 400
+
 # Maximum Mean Discrepancy Hyper Parameter
 MMD_LAMDA = 0.25
+
+# Paths
+DATA_DIRECTORY = '../bdd100k/seg/'
+TEST_MEAN_PATH = "../bdd100k/seg/test_mean.pkl"
+TRAIN_MEAN_PATH = "../bdd100k/seg/train_mean.pkl"
+CLASS_WEIGHT_PATH = "../bdd100k/seg/class_weights.pkl"
+PRETRAIN_RESTORE_PATH = './pretrain/MS_DeepLab_resnet_pretrained_COCO_init.pth'
+CHECKPOINT_DIR = './checkpoints/'
+
+# Specify as NONE if not resuming
+CHECKPOINT_RESTORE_PATH = './checkpoints/DC_400_models/BDD_Train_311.pkl'
 
 def loss_calc(pred, label, weights):
     """
@@ -54,13 +59,11 @@ def loss_calc(pred, label, weights):
     # label shape h x w x 1 x batch_size  -> batch_size x 1 x h x w
     label = Variable(label.long()).cuda()
     criterion = torch.nn.CrossEntropyLoss(weight=weights,ignore_index=IGNORE_LABEL).cuda()
-    
     return criterion(pred, label)
 
 # Adjsting based on polynomial decay lr based on the epochs becomes 0 by last iteration
 def lr_poly(base_lr, iter, max_iter, power):
     return base_lr*((1-float(iter)/max_iter)**(power))
-
 
 def get_1x_lr_params_NOscale(model):
     """
@@ -117,6 +120,25 @@ def mmd_linear(f_of_X, f_of_Y):
     loss = torch.mean(torch.mm(delta, torch.transpose(delta, 0, 1)))
     return loss
 
+# Consider linear time MMD with a polynomial kernel:
+# K(f(x), f(y)) = (alpha*f(x)^Tf(y) + c)^d
+# f_of_X: batch_size * k
+# f_of_Y: batch_size * k
+def poly_mmd2(f_of_X, f_of_Y, d=2, alpha=1.0, c=2.0):
+    K_XX = (alpha * (f_of_X[:-1] * f_of_X[1:]).sum(1) + c)
+    K_XX_mean = torch.mean(K_XX.pow(d))
+
+    K_YY = (alpha * (f_of_Y[:-1] * f_of_Y[1:]).sum(1) + c)
+    K_YY_mean = torch.mean(K_YY.pow(d))
+
+    K_XY = (alpha * (f_of_X[:-1] * f_of_Y[1:]).sum(1) + c)
+    K_XY_mean = torch.mean(K_XY.pow(d))
+
+    K_YX = (alpha * (f_of_Y[:-1] * f_of_X[1:]).sum(1) + c)
+    K_YX_mean = torch.mean(K_YX.pow(d))
+
+    return K_XX_mean + K_YY_mean - K_XY_mean - K_YX_mean
+
 def main():
 
     # Load Dataset Means & Train Dataset Class Weights
@@ -149,18 +171,7 @@ def main():
     # If is_training=True, the statistics will be updated during the training.
     # Note that is_training=False still updates BN parameters gamma (scale) and beta (offset)
     # if they are presented in var_list of the optimiser definition.
-    
-    saved_state_dict = torch.load(RESTORE_FROM)
-    new_params = model.state_dict().copy()
-    for i in saved_state_dict:
-        #Scale.layer5.conv2d_list.3.weight
-        i_parts = i.split('.')
-        # print i_parts
-        if not NUM_CLASSES == 19 or not i_parts[1]=='layer5':
-            new_params['.'.join(i_parts[1:])] = saved_state_dict[i]
-    model.load_state_dict(new_params)
-    #model.float()
-    #model.eval() # use_global_stats = True
+
     model.train()
     model.cuda()
     
@@ -196,14 +207,25 @@ def main():
     start_epoch = 0
 
     # Resume Training
-    if len(os.listdir(CHECKPOINT_SAVEPATH)) > 0:
-        checkpoint_path = CHECKPOINT_SAVEPATH + os.listdir(CHECKPOINT_SAVEPATH)[-1]
-        checkpoint = torch.load(checkpoint_path)
-        print(checkpoint.keys())
+    if CHECKPOINT_RESTORE_PATH is not None:
+        checkpoint = torch.load(CHECKPOINT_RESTORE_PATH)
         start_epoch = int(checkpoint['epoch'])+1
+        print("Resuming Training! Current Epoch: ",start_epoch)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         train_epoch_loss = checkpoint['train_epoch_loss']
+    
+    # Pre-trained Model on COCO Dataset
+    else:
+        saved_state_dict = torch.load(PRETRAIN_RESTORE_PATH)
+        new_params = model.state_dict().copy()
+        for i in saved_state_dict:
+            #Scale.layer5.conv2d_list.3.weight
+            i_parts = i.split('.')
+            # print i_parts
+            if not NUM_CLASSES == 19 or not i_parts[1]=='layer5':
+                new_params['.'.join(i_parts[1:])] = saved_state_dict[i]
+        model.load_state_dict(new_params)
 
     print ("Starting Training!")
     print ("==================")
@@ -212,8 +234,8 @@ def main():
     for epoch in tqdm(range(start_epoch, EPOCHS)):
 
         #restore loss function
-        if start_epoch > 0 and epoch == start_epoch:
-            loss = checkpoint['loss']
+        #if start_epoch > 0 and epoch == start_epoch:
+            #loss = checkpoint['loss']
  
         batch_losses = []
 
@@ -234,7 +256,7 @@ def main():
 
             # print("MMD_LOSS: "+str((MMD_LAMDA*mmd_linear(pred,target)).data.cpu().numpy()))
 
-            loss = loss_calc(pred, labels, CLASS_WEIGHTS) + MMD_LAMDA*mmd_linear(pred,target)
+            loss = loss_calc(pred, labels, CLASS_WEIGHTS) + mmd_linear(pred,target)
 
             loss.backward()
             optimizer.step()
