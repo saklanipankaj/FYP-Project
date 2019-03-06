@@ -35,7 +35,7 @@ RANDOM_SCALE = True
 RANDOM_FLIP = True
 
 WEIGHT_DECAY = 0.0005
-EPOCHS = 400
+EPOCHS = 500
 
 # Maximum Mean Discrepancy Hyper Parameter
 MMD_LAMDA = 0.25
@@ -49,7 +49,7 @@ PRETRAIN_RESTORE_PATH = './pretrain/MS_DeepLab_resnet_pretrained_COCO_init.pth'
 CHECKPOINT_DIR = './checkpoints/'
 
 # Specify as NONE if not resuming
-CHECKPOINT_RESTORE_PATH = './checkpoints/DC_400_models/BDD_Train_311.pkl'
+CHECKPOINT_RESTORE_PATH = './checkpoints/DC_400_models/BDD_Train_312.pkl'
 
 def loss_calc(pred, label, weights):
     """
@@ -215,7 +215,7 @@ def main():
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         train_epoch_loss = checkpoint['train_epoch_loss']
     
-    # Pre-trained Model on COCO Dataset
+    # Restore first 4 layers from pre-trained Model for quicker training
     else:
         saved_state_dict = torch.load(PRETRAIN_RESTORE_PATH)
         new_params = model.state_dict().copy()
