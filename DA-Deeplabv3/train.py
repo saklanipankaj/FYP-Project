@@ -49,7 +49,7 @@ PRETRAIN_RESTORE_PATH = './pretrain/MS_DeepLab_resnet_pretrained_COCO_init.pth'
 CHECKPOINT_DIR = './checkpoints/'
 
 # Specify as NONE if not resuming
-CHECKPOINT_RESTORE_PATH = './checkpoints/DC_500_models/BDD_Train_Completed.pkl'
+CHECKPOINT_RESTORE_PATH = './checkpoints/BDD_Train_Completed.pkl'
 
 def loss_calc(pred, label, weights):
     """
