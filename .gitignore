@@ -3,3 +3,22 @@ Deeplabv3 Framework/pretrained_models/resnet/resnet34-333f7ec4.pth
 Deeplabv3 Framework/pretrained_models/model_13_2_2_2_epoch_580.pth
 Pytorch-Deeplab-master/pretrain/MS_DeepLab_resnet_pretrained_COCO_init.pth
 DA-Deeplabv3/pretrain/MS_DeepLab_resnet_pretrained_COCO_init.pth
+DA-Deeplabv3/util/__pycache__/
+DA-Deeplabv3/results/Normal_2/
+DA-Deeplabv3/results/Normal/pred/171206_061822181_Camera_5.png
+DA-Deeplabv3/results/Normal/pred/171206_061634472_Camera_5.png
+DA-Deeplabv3/results/Normal/pred/171206_061549097_Camera_5.png
+DA-Deeplabv3/results/Normal/
+DA-Deeplabv3/results/DA_2/
+DA-Deeplabv3/results/DA_2/pred/171206_062815844_Camera_5.png
+DA-Deeplabv3/results/DA_2/pred/171206_062707255_Camera_5.png
+DA-Deeplabv3/figures/completetion_params_500 (Normal).pkl
+DA-Deeplabv3/figures/completetion_params_500 (DA).pkl
+DA-Deeplabv3/figures/completetion_params_1000.pkl
+DA-Deeplabv3/results/data_list_Normal.pkl
+DA-Deeplabv3/results/data_list_Domain Adaption.pkl
+DA-Deeplabv3/checkpoints/DC_400_models/BDD_Train_312.pkl
+DA-Deeplabv3/checkpoints/BDD_Train_Completed_500_(Normal).pkl
+DA-Deeplabv3/checkpoints/BDD_Train_Completed_(DA).pkl
+Deeplabv3 Framework/.idea/vcs.xml
+DA-Deeplabv3/pretrain/resnet_coco.pth

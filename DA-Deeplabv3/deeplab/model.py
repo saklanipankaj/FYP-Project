@@ -314,11 +314,7 @@ def DC_Deeplab(num_classes=19):
     model = DC_Deeplab(Bottleneck, num_classes)
     return model
 
-def Res_Ms_Deeplab(num_classes=21):
-    model = MS_Deeplab(Bottleneck, num_classes)
-    return model
-
-def Res_Deeplab(num_classes=21, is_refine=False):
+def Res_Deeplab(num_classes=19, is_refine=False):
     if is_refine:
         model = ResNet_Refine(Bottleneck,[3, 4, 23, 3], num_classes)
     else:

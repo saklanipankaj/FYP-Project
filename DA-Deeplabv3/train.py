@@ -9,7 +9,7 @@ import torch.backends.cudnn as cudnn
 import os
 import os.path as osp
 from deeplab.model import Res_Deeplab
-from deeplab.datasets import DataSetTrain, DataSetVal, DataSetTest
+from deeplab.datasets import DataSetTrain, DataSetVal, DataSetTarget
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from itertools import cycle
@@ -35,7 +35,7 @@ RANDOM_SCALE = True
 RANDOM_FLIP = True
 
 WEIGHT_DECAY = 0.0005
-EPOCHS = 1000
+EPOCHS = 500
 
 # Maximum Mean Discrepancy Hyper Parameter
 MMD_LAMDA = 0.25
@@ -104,7 +104,6 @@ def get_10x_lr_params(model):
             
 
 def adjust_learning_rate(optimizer, i_iter):
-    """Sets the learning rate to the initial LR divided by 5 at 60th, 120th and 160th epochs"""
     lr = lr_poly(LEARNING_RATE, i_iter, EPOCHS*NUM_STEPS, POWER)
     optimizer.param_groups[0]['lr'] = lr
     optimizer.param_groups[1]['lr'] = lr * 10
@@ -140,7 +139,6 @@ def poly_mmd2(f_of_X, f_of_Y, d=2, alpha=1.0, c=2.0):
     return K_XX_mean + K_YY_mean - K_XY_mean - K_YX_mean
 
 def main():
-
     # Load Dataset Means & Train Dataset Class Weights
     if os.path.isfile(TRAIN_MEAN_PATH):
         with open(TRAIN_MEAN_PATH, "rb") as file:
@@ -190,7 +188,7 @@ def main():
                     scale=RANDOM_SCALE, mirror=RANDOM_FLIP, mean=TRAIN_IMG_MEAN), 
                     batch_size=BATCH_SIZE, shuffle=True, num_workers=1, pin_memory=True)
 
-    testloader = data.DataLoader(DataSetTest(DATA_DIRECTORY, max_iters=NUM_TEST_FILES, crop_size=input_size, 
+    testloader = data.DataLoader(DataSetTarget(DATA_DIRECTORY, max_iters=NUM_TEST_FILES, crop_size=input_size, 
                 scale=RANDOM_SCALE, mirror=RANDOM_FLIP, mean=TEST_IMG_MEAN, train=True), 
                 batch_size=BATCH_SIZE, shuffle=True, num_workers=1, pin_memory=True)
 
@@ -201,6 +199,7 @@ def main():
     optimizer = optim.SGD([{'params': get_1x_lr_params_NOscale(model), 'lr': LEARNING_RATE }, 
                 {'params': get_10x_lr_params(model), 'lr': 10*LEARNING_RATE}], 
                 lr=LEARNING_RATE, momentum=MOMENTUM,weight_decay=WEIGHT_DECAY)
+    
     optimizer.zero_grad()
 
     train_epoch_loss = []
@@ -220,9 +219,7 @@ def main():
         saved_state_dict = torch.load(PRETRAIN_RESTORE_PATH)
         new_params = model.state_dict().copy()
         for i in saved_state_dict:
-            #Scale.layer5.conv2d_list.3.weight
             i_parts = i.split('.')
-            # print i_parts
             if not NUM_CLASSES == 19 or not i_parts[1]=='layer5':
                 new_params['.'.join(i_parts[1:])] = saved_state_dict[i]
         model.load_state_dict(new_params)
@@ -249,14 +246,18 @@ def main():
             optimizer.zero_grad()
             adjust_learning_rate(optimizer, epoch*i_iter)
 
-            pred =  nn.functional.interpolate((model(images)),size=input_size, mode='bilinear', align_corners=True)
-            target = nn.functional.interpolate((model(test_images)),size=input_size, mode='bilinear', align_corners=True)
+            pred = model(images)
+            target = model(test_images)
+
+            mmd = mmd_linear(pred,target)
+
+            pred =  nn.functional.interpolate(pred,size=input_size, mode='bilinear', align_corners=True)
 
             # pred, mmd_loss =  model(images,test_images)
 
             # print("MMD_LOSS: "+str((MMD_LAMDA*mmd_linear(pred,target)).data.cpu().numpy()))
 
-            loss = loss_calc(pred, labels, CLASS_WEIGHTS) + mmd_linear(pred,target)
+            loss = loss_calc(pred, labels, CLASS_WEIGHTS) + mmd
 
             loss.backward()
             optimizer.step()

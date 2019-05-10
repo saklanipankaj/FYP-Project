@@ -4,53 +4,53 @@ from scipy import ndimage
 import cv2
 import numpy as np
 import sys
-
+import pickle
+import os
+import os.path as osp
 import torch
 from torch.autograd import Variable
 import torchvision.models as models
 import torch.nn.functional as F
 from torch.utils import data
+from tqdm import tqdm
+
 from deeplab.model import Res_Deeplab
 from deeplab.datasets import DataSetTest
 from collections import OrderedDict
-import os
 
-from utils import get_colormaps, label_img_to_color
+from util.utils import label_img_to_color, apllo_lbl_to_bdd, convert_apollo_to_bdd
+from util.bdd_evaluate import evaluate_segmentation
 
 import matplotlib.pyplot as plt
 import torch.nn as nn
-IMG_MEAN = np.array((104.00698793,116.66876762,122.67891434), dtype=np.float32)
 
 GPU = 0
 DATA_DIRECTORY = '../bdd100k/seg/'
 IGNORE_LABEL = 255
 NUM_CLASSES = 19
 BATCH_SIZE = 1
-NUM_TRAIN_FILES = 7000
+NUM_TRAIN_FILES = 1938
 NUM_STEPS = NUM_TRAIN_FILES/BATCH_SIZE # Number of images in the validation set.
-RESTORE_FROM = './BDD_Train_Completed.pkl'
+RESTORE_FROM = ('./checkpoints/BDD_Train_Completed_(DA).pkl', './checkpoints/BDD_Train_Completed_500_(Normal).pkl')
+TITLE = ('Domain Adaption', 'Normal')
 
-def get_arguments():
-    """Parse all the arguments provided from the CLI.
-    
-    Returns:
-      A list of parsed arguments.
-    """
-    parser = argparse.ArgumentParser(description="DeepLabLFOV Network")
-    parser.add_argument("--data-dir", type=str, default=DATA_DIRECTORY,
-                        help="Path to the directory containing the PASCAL VOC dataset.")
-    parser.add_argument("--data-list", type=str, default=DATA_LIST_PATH,
-                        help="Path to the file listing the images in the dataset.")
-    parser.add_argument("--ignore-label", type=int, default=IGNORE_LABEL,
-                        help="The index of the label to ignore during the training.")
-    parser.add_argument("--num-classes", type=int, default=NUM_CLASSES,
-                        help="Number of classes to predict (including background).")
-    parser.add_argument("--restore-from", type=str, default=RESTORE_FROM,
-                        help="Where restore model parameters from.")
-    parser.add_argument("--gpu", type=int, default=0,
-                        help="choose gpu device.")
-    return parser.parse_args()
+PRED_SAVE_DIR = ('./results/DA_2/pred/','./results/Normal_2/pred/')
+LBL_SAVE_DIR = ('./results/DA_2/label/','./results/Normal_2/label/')
+LBL_CHG_SAVE_DIR = './results/label_changed/'
 
+VISUAL_SAVE_DIR = "./results/"
+VISUAL_COLOR=""
+VISUAL_PRED=""
+VISUAL_OVERLAY=""
+
+IMAGE_SIZE = (1280, int(2710/3382*1280))
+TEST_MEAN_PATH = "../bdd100k/seg/apollo_mean.pkl"
+TEST_IMG_MEAN = 0
+
+CLASS_NAMES = ('Road','Sidewalk','Building','Wall','Fence',
+    'Pole', 'Traffic Light', 'Traffic Sign', 'Vegetation', 
+    'Terrain', 'Sky', 'Person', 'Rider', 'Car', 'Truck', 'Bus',
+    'Train', 'Motorcycle', 'Bicycle')
 
 def get_iou(data_list, class_num, save_path=None):
     from multiprocessing import Pool 
@@ -74,79 +74,171 @@ def get_iou(data_list, class_num, save_path=None):
             f.write(str(j_list)+'\n')
             f.write(str(M)+'\n')
 
-def show_all(gt, pred):
-    import matplotlib.pyplot as plt
-    from matplotlib import colors
-    from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-    fig, axes = plt.subplots(1, 2)
-    ax1, ax2 = axes
 
-    classes = np.array(('background',  # always index 0
-               'aeroplane', 'bicycle', 'bird', 'boat',
-               'bottle', 'bus', 'car', 'cat', 'chair',
-                         'cow', 'diningtable', 'dog', 'horse',
-                         'motorbike', 'person', 'pottedplant',
-                         'sheep', 'sofa', 'train', 'tvmonitor'))
-    # colormap = [(0,0,0),(0.5,0,0),(0,0.5,0),(0.5,0.5,0),(0,0,0.5),(0.5,0,0.5),(0,0.5,0.5), 
-    #                 (0.5,0.5,0.5),(0.25,0,0),(0.75,0,0),(0.25,0.5,0),(0.75,0.5,0),(0.25,0,0.5), 
-    #                 (0.75,0,0.5),(0.25,0.5,0.5),(0.75,0.5,0.5),(0,0.25,0),(0.5,0.25,0),(0,0.75,0), 
-    #                 (0.5,0.75,0),(0,0.25,0.5)]
-    cmap = colors.ListedColormap(colormap)
-    bounds=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21]
-    norm = colors.BoundaryNorm(bounds, cmap.N)
+def create_save_visualisation(imgs, pred, img_ids, overlay=False):
+    ########################################################################
+    # save data for visualization:
+    ########################################################################
+    print("Starting Visualisation")
+    pred_label_imgs = np.argmax(outputs, axis=1) # (shape: (batch_size, img_h, img_w))
+    pred_label_imgs = pred_label_imgs.astype(np.uint8)
 
-    ax1.set_title('gt')
-    ax1.imshow(gt, cmap=cmap, norm=norm)
+    color_dir = osp.join(VISUAL_SAVE_DIR, VISUAL_COLOR)
+    pred_dir = osp.join(VISUAL_SAVE_DIR, VISUAL_PRED)
+    overlay_dir = osp.join(VISUAL_SAVE_DIR, VISUAL_OVERLAY)
 
-    ax2.set_title('pred')
-    ax2.imshow(pred, cmap=cmap, norm=norm)
+    if not os.isdir(color_dir):
+        os.mkdir(color_dir)
+        os.mkdir(pred_dir)
+        os.mkdir(overlay_dir)
 
-    plt.show()
+    for i in range(pred_label_imgs.shape[0]):
+        if i == 0:
+            pred_label_img = pred_label_imgs[i] # (shape: (img_h, img_w))
+            img_id = img_ids[i]
+            img = imgs[i] # (shape: (3, img_h, img_w))
+
+            output = output.transpose(1,2,0)
+            cv2.imwrite(osp.join(pred_dir, img_id+'.png'), pred_label_img)
+
+            # Save color pred
+            if overlay:
+                pred_label_img_color = label_img_to_color(pred_label_img)
+                cv2.imwrite(osp.join(color_dir, img_id), pred_label_img_color)
+
+                img = img.data.cpu().numpy()
+                img = np.transpose(img, (1, 2, 0)) # (shape: (img_h, img_w, 3))
+                img += TEST_IMG_MEAN
+                img = img.astype(np.uint8)
+
+                overlayed_img = 0.45*img + 0.55*pred_label_img_color
+                overlayed_img = overlayed_img.astype(np.uint8)
+                cv2.imwrite(osp.join(overlay_dir, img_id + "_overlayed.png"), overlayed_img)
+
+def save_results(labels, pred, img_ids):
+    print("Starting Visualisation!")
+    outputs = pred.data.cpu().numpy()
+    pred_label
+
+# Create Video From computed images
+def createVideo(img_h, img_w):
+    imgDir = osp.join(DATA_DIRECTORY, "images/apollo_test")
+
+    out = cv2.VideoWriter("%s/video_combined.avi" % (VISUAL_SAVE_DIR), cv2.VideoWriter_fourcc(*"MJPG"), 20, (2*img_w, 2*img_h))
+    for img_id in tqdm(os.listdir(imgDir)):
+        
+        img = cv2.imread(osp.join(imgDir,img_id), -1)
+        img_id = img_id[:-4]
+
+        pred_img = cv2.imread(osp.join(VISUAL_SAVE_DIR, img_id + "_pred.png"), -1)
+        overlayed_img = cv2.imread(osp.join(VISUAL_SAVE_DIR_2, img_id + "_overlayed.png"), -1)
+
+
+        img = cv2.resize(img, (img_w, img_h))
+
+        combined_img = np.zeros((2*img_h, 2*img_w, 3), dtype=np.uint8)
+        combined_img[0:img_h, 0:img_w] = img
+        combined_img[0:img_h, img_w:(2*img_w)] = pred_img
+        combined_img[img_h:(2*img_h), (int(img_w/2)):(img_w + int(img_w/2))] = overlayed_img
+
+        out.write(combined_img)
+
+    out.release()
 
 def main():
-    fig, axes = plt.subplots(1, 2)
-    ax1, ax2 = axes
 
-    testloader = data.DataLoader(DataSetTest(DATA_DIRECTORY, crop_size=(505, 505), mean=IMG_MEAN, scale=False, mirror=False), 
-                                     batch_size=1, shuffle=False, pin_memory=True)
+    """Create the model and start the evaluation process."""
+    # gpu0 = GPU
+    # torch.cuda.empty_cache()
 
+    # model = Res_Deeplab(num_classes=NUM_CLASSES)
     
-    
-    cmap = get_colormaps()
-    bounds=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18]
-    norm = colors.BoundaryNorm(bounds, cmap.N)
+    # for i, res in enumerate(RESTORE_FROM):
+    #     checkpoint = torch.load(res)
+    #     model.load_state_dict(checkpoint['model_state_dict'])
 
-    for index, batch in enumerate(testloader):
+    #     # Load Dataset Means & Train Dataset Class Weights
+    #     if osp.isfile(TEST_MEAN_PATH):
+    #         with open(TEST_MEAN_PATH, "rb") as file:
+    #             TEST_IMG_MEAN = np.array(pickle.load(file))
+    #     else:
+    #         print("Please run the preprocess_data.py file in utils first!")
+    #         print("Exiting Training!")
+    #         return
 
+    #     model.eval()
+    #     model.cuda(gpu0)
+
+    #     testloader = data.DataLoader(DataSetTest(DATA_DIRECTORY, max_iters=None, crop_size=IMAGE_SIZE, mean=TEST_IMG_MEAN), 
+    #                 batch_size=BATCH_SIZE, shuffle=True, num_workers=5, pin_memory=True)
+
+    #     data_list = []
+    #     for step, (imgs, label, img_ids) in tqdm(enumerate(testloader)):
+    #         with torch.no_grad(): # (corresponds to setting volatile=True in all variables, this is done during inference to reduce memory consumption)
+
+    #             print(TITLE[i]," Step: ",step,"/",len(testloader))
+    #             imgs = Variable(imgs).cuda(gpu0)
+
+    #             pred = nn.functional.interpolate((model(imgs)),size= (int(2710/3382*1280),1280), mode='bilinear', align_corners=True)
+    #             output = np.argmax(F.softmax(pred, dim=1).cpu().data[0].numpy(),axis=0)
+
+    #             lbl = np.asarray(label[0].numpy(), dtype=np.int32)
+
+    #             cv2.imwrite(osp.join(PRED_SAVE_DIR[i], img_ids[0] + ".png"), output)
+
+    #             data_list.append([lbl.flatten(), output.flatten()])
+    #             # cv2.imwrite(osp.join(LBL_SAVE_DIR, img_ids[0] + ".png"), np.asarray(label[0], np.uint8))
+    #             if i == 0:
+    #                 apllo_lbl_to_bdd(label[0],osp.join(LBL_SAVE_DIR[i], img_ids[0] + ".png"))
+    #                 print("Saving BDD Label")
+    #             else:
+    #                 cv2.imwrite(osp.join(LBL_SAVE_DIR[i], img_ids[0] + ".png"), lbl)
+
+
+    #     with open("./results/data_list_"+TITLE[i]+".pkl", "wb") as file:
+    #         pickle.dump(data_list, file, protocol=2)
         
 
-    ax1.set_title('gt')
-    ax1.imshow(gt, cmap=cmap, norm=norm)
+        # convert_apollo_to_bdd(LBL_SAVE_DIR, LBL_CHG_SAVE_DIR)
+                
+    # miou, ious = evaluate_segmentation("./results/DA_2/label/","./results/DA_2/pred/",19,200)
+    # print("DA: ",miou)
 
-    ax2.set_title('pred')
-    ax2.imshow(pred, cmap=cmap, norm=norm)
+    # p1 = plt.barh(np.arange(len(CLASS_NAMES)), ious, align='center', color="red")
+    # miou, ious = evaluate_segmentation("./results/DA_2/label/","./results/Normal_2/pred/",19,200)
+    # print("Normal: ",miou)
+    # p2 = plt.barh(np.arange(len(CLASS_NAMES)), ious, align='center', color="black")
 
-    plt.show()
+    # plt.title("IoU per Class")
+    # plt.ylabel('Classes')
+    # plt.yticks(np.arange(len(CLASS_NAMES)), CLASS_NAMES)
+    # plt.xticks(np.arange(0,100,step=10))
+    # plt.xlabel('IoU')
+    # plt.legend((p1[0],p2[0]), ('Domain Adaption', 'Deeplabv3'))
+    # plt.savefig("./results/NormalsvDA_Bar.png")
+    # plt.show()
+
+    img = cv2.imread("C:/Users/Home/Desktop/Test Pictures/170927_071013518_Camera_5.jpg", -1)
+    pred = cv2.imread("C:/Users/Home/Desktop/Test Pictures/170927_071013518_Camera_5.png", -1)
+    img = np.asarray(img, np.float32)
+
+    pred_label_img = pred.astype(np.uint8)
+    print("Starting Colouring")
+    pred_label_img_color = label_img_to_color(pred_label_img)
+    print("End Colouring")
+    cv2.imwrite("C:/Users/Home/Desktop/Test Pictures/170927_071013518_Camera_5_color.png", pred_label_img_color)
     
-    
-    # """Create the model and start the evaluation process."""
-    # args = get_arguments()
+    overlayed_img = 0.45*img + 0.55*pred_label_img_color
+    overlayed_img = overlayed_img.astype(np.uint8)
+    cv2.imwrite("C:/Users/Home/Desktop/Test Pictures/170927_071013518_Camera_5_overlay.png", overlayed_img)
 
-    # gpu0 = args.gpu
 
-    # model = Res_Deeplab(num_classes=args.num_classes)
-    
-    # saved_state_dict = torch.load(args.restore_from)
-    # model.load_state_dict(saved_state_dict)
 
-    # model.eval()
-    # model.cuda(gpu0)
+    create_save_visualisation((img),(pred),("170927_074018569_Camera_5"),overlay = True)
 
-    # testloader = data.DataLoader(DataSetTest(args.data_dir, crop_size=(505, 505), mean=IMG_MEAN, scale=False, mirror=False), 
-    #                                 batch_size=1, shuffle=False, pin_memory=True)
+    # createVideo(576, 720)
 
-    # interp = nn.Upsample(size=(505, 505), mode='bilinear', align_corners=True)
     # data_list = []
 
     # for index, batch in enumerate(testloader):
